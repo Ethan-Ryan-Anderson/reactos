@@ -1637,6 +1637,7 @@ UDFReadDiscTrackInfo(
     PVCB              Vcb                // Volume Control Block for ^ DevObj
     )
 {
+    UDFPrint(("UDFReadDiscTrackInfo\n"));
     OSSTATUS                    RC = STATUS_SUCCESS;
     PDISC_INFO_BLOCK_USER_OUT   DiscInfo = (PDISC_INFO_BLOCK_USER_OUT)MyAllocatePool__(NonPagedPool,sizeof(DISC_INFO_BLOCK_USER_OUT) );
     PTRACK_INFO_BLOCK_USER_OUT  TrackInfoOut = (PTRACK_INFO_BLOCK_USER_OUT)MyAllocatePool__(NonPagedPool,sizeof(TRACK_INFO_BLOCK_USER_OUT) );
@@ -2351,7 +2352,8 @@ UDFReadAndProcessFullToc(
             switch (POINT = toc->SessionData[index].POINT) {
             case POINT_StartPositionOfNextProgramArea: {
 #define TempMSF toc->SessionData[index].Params.StartPositionOfNextProgramArea.MaxLeadOut_MSF
-                Vcb->LastPossibleLBA = MSF_TO_LBA(TempMSF[0],TempMSF[1],TempMSF[2]);
+                    UDFPrint(("MSF_TO_LBA\n"));
+                    Vcb->LastPossibleLBA = MSF_TO_LBA(TempMSF[0], TempMSF[1], TempMSF[2]);
 #undef TempMSF
                 break;
                 }
@@ -2466,6 +2468,7 @@ UDFUseStandard(
                 }
             }
 #endif //UDF_FORMAT_MEDIA
+            UDFPrint(("max(LastLBA, DEFAULT_CD)\n"));
             Vcb->LastPossibleLBA = max(Vcb->LastLBA, DEFAULT_LAST_LBA_FP_CD);
             Vcb->TrackMap[1].DataParam = TrkInfo_Dat_XA | TrkInfo_FP | TrkInfo_Packet;
             Vcb->TrackMap[1].TrackParam = TrkInfo_Trk_XA;
@@ -2699,8 +2702,7 @@ UDFGetBlockSize(
 #endif //UDF_FORMAT_MEDIA
 
     if(!DiskGeometry || !PartitionInfo)
-        try_return (RC = STATUS_INSUFFICIENT_RESOURCES);
-
+        try_return(RC = STATUS_INSUFFICIENT_RESOURCES);
 #ifdef _BROWSE_UDF_
 
 #ifdef UDF_HDD_SUPPORT
@@ -2724,8 +2726,10 @@ UDFGetBlockSize(
                     RC = STATUS_UNRECOGNIZED_VOLUME;
                 try_return(RC);
             }
-            if(PartitionInfo->PartitionType != PARTITION_IFS) {
+            if (PartitionInfo->PartitionType != PARTITION_IFS && PartitionInfo->PartitionType != PARTITION_HUGE)
+            {
                 UDFPrint(("UDFGetBlockSize: PartitionInfo->PartitionType != PARTITION_IFS\n"));
+                UDFPrint(("UDFGetBlockSize: PartitionInfo->PartitionType is %x\n", PartitionInfo->PartitionType));
                 try_return(RC = STATUS_UNRECOGNIZED_VOLUME);
             }
         } else {
@@ -2818,8 +2822,10 @@ UDFGetBlockSize(
 #endif //UDF_FORMAT_MEDIA
 
         Vcb->FirstLBA=0;//(ULONG)(PartitionInfo->StartingOffset.QuadPart >> Vcb->BlockSizeBits);
+        UDFPrint(("LastPossibleLba quadpart %x\n", PartitionInfo->PartitionLength.QuadPart));
         Vcb->LastPossibleLBA =
         Vcb->LastLBA = (uint32)(PartitionInfo->PartitionLength.QuadPart >> Vcb->BlockSizeBits)/* + Vcb->FirstLBA*/ - 1;
+        UDFPrint(("LastPossibleLba %x\n", Vcb->LastPossibleLBA));
     } else {
 #endif //UDF_HDD_SUPPORT
         Vcb->FirstLBA=0;
@@ -2833,6 +2839,7 @@ UDFGetBlockSize(
         } else {
             Vcb->LastLBA = UDFIsDvdMedia(Vcb) ? DEFAULT_LAST_LBA_DVD : DEFAULT_LAST_LBA_FP_CD;
         }
+        UDFPrint(("LastPossibleLBA = LastLBA\n"));
         Vcb->LastPossibleLBA = Vcb->LastLBA;
 #ifdef UDF_HDD_SUPPORT
     }
@@ -3073,6 +3080,7 @@ UDFGetDiskInfo(
 
     _SEH2_TRY {
         RC = UDFGetBlockSize(DeviceObject, Vcb);
+        UDFPrint(("After UDFGetBlockSize LastPossibleLba %x\n", Vcb->LastPossibleLBA));
         if(!OS_SUCCESS(RC)) try_return(RC);
 
 
@@ -3085,6 +3093,7 @@ UDFGetDiskInfo(
         if(!OS_SUCCESS(RC)) {
 
             RC = UDFUseStandard(DeviceObject, Vcb);
+            UDFPrint(("After UDFUseStandard LastPossibleLba %x\n", Vcb->LastPossibleLBA));
 #ifdef _BROWSE_UDF_
             if(!NT_SUCCESS(RC) || fms)
                 try_return(RC);

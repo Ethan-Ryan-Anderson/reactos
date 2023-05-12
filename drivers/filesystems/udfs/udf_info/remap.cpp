@@ -231,6 +231,7 @@ UDFVWrite(
     IN uint32 Flags
     )
 {
+    UDFPrint(("UDFVWrite\n"));
     PLIST_ENTRY Link;
     PUDF_VERIFY_ITEM vItem;
     //PUDF_VERIFY_ITEM vItem1;
@@ -381,6 +382,7 @@ UDFVRead(
     IN uint32 Flags
     )
 {
+    UDFPrint(("UDFVRead\n"));
     PLIST_ENTRY Link;
     PUDF_VERIFY_ITEM vItem;
     PUDF_VERIFY_CTX VerifyCtx = &Vcb->VerifyCtx;

@@ -54,7 +54,7 @@ UDFCreate(
     BOOLEAN             AreWeTopLevel = FALSE;
 
     TmPrint(("UDFCreate:\n"));
-
+    TmPrint(("DeviceObject=%x\n", DeviceObject));
     FsRtlEnterFileSystem();
     ASSERT(DeviceObject);
     ASSERT(Irp);
@@ -260,7 +260,7 @@ UDFCommonCreate(
     ULONG                       SNameIndex = 0;
 
     TmPrint(("UDFCommonCreate:\n"));
-
+    AdPrint(("Create on Device Object %x\n", PtrIrpContext->TargetDeviceObject));
     ASSERT(PtrIrpContext);
     ASSERT(Irp);
 
@@ -1186,6 +1186,7 @@ op_vol_accs_dnd:
                 // check if we should open normal File/Dir or SDir
                 if(CurName.Buffer[0] != ':') {
                     // standard open, nothing interesting....
+                    AdPrint(("1189:UDFOpenFile__\n"));
                     RC = UDFOpenFile__(Vcb,
                                        IgnoreCase,TRUE,&CurName,
                                        RelatedFileInfo,&NewFileInfo,NULL);
@@ -1225,6 +1226,7 @@ SuccessOpen_SDir:
                            (RequestedDisposition == FILE_OPEN_IF) ||
                            (RequestedDisposition == FILE_OVERWRITE_IF) ||
                             OpenTargetDirectory ) {
+                            AdPrint(("1228:UDFCreateStreamDir__\n"));
                             RC = UDFCreateStreamDir__(Vcb, RelatedFileInfo, &NewFileInfo);
                             if(NT_SUCCESS(RC))
                                 goto SuccessOpen_SDir;

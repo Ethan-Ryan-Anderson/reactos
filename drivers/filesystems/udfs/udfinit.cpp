@@ -812,8 +812,9 @@ Return Value:
 {
     // Begin by determine whether or not the file system is a cdrom-based file
     // system.  If not, then this driver is not concerned with it.
-    if (!FsRegistered ||
-        DeviceObject->DeviceType != FILE_DEVICE_CD_ROM_FILE_SYSTEM) {
+    if (!FsRegistered || (DeviceObject->DeviceType != FILE_DEVICE_CD_ROM_FILE_SYSTEM &&
+                          DeviceObject->DeviceType != FILE_DEVICE_DISK_FILE_SYSTEM))
+    {
         return;
     }
 

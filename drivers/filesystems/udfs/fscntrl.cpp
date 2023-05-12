@@ -107,8 +107,7 @@ UDFCommonFSControl(
 {
     NTSTATUS                RC = STATUS_UNRECOGNIZED_VOLUME;
     PIO_STACK_LOCATION      IrpSp = NULL;
-//    PDEVICE_OBJECT          PtrTargetDeviceObject = NULL;
-
+    //    PDEVICE_OBJECT          PtrTargetDeviceObject = NULL;
     UDFPrint(("\nUDFCommonFSControl\n\n"));
 //    BrutePoint();
 
@@ -376,6 +375,7 @@ UDFMountVolume(
         }
         if(TargetDeviceObject->DeviceType == FILE_DEVICE_CD_ROM) {
             FsDeviceType = FILE_DEVICE_CD_ROM_FILE_SYSTEM;
+            return STATUS_UNRECOGNIZED_MEDIA;
 #ifdef UDF_HDD_SUPPORT
         } else
         if (TargetDeviceObject->DeviceType == FILE_DEVICE_DISK) {
@@ -385,7 +385,7 @@ UDFMountVolume(
                 }
             } else {
                 if(!UDFGetRegParameter(NULL, REG_MOUNT_ON_HDD_NAME, FALSE)) {
-                    WrongMedia = TRUE;
+                    WrongMedia = FALSE;
                 }
             }
             FsDeviceType = FILE_DEVICE_DISK_FILE_SYSTEM;
@@ -545,6 +545,7 @@ UDFMountVolume(
         // Initialize the Vcb.  This routine will raise on an allocation
         // failure.
         RC = UDFInitializeVCB(VolDo,TargetDeviceObject,Vpb);
+        UDFPrint(("After InitVCB LastPossibleLba %x\n", Vcb->LastPossibleLBA));
         if(!NT_SUCCESS(RC)) {
             Vcb = NULL;
             try_return(RC);
@@ -571,6 +572,7 @@ UDFMountVolume(
 
         DeviceNotTouched = FALSE;
         RC = UDFGetDiskInfo(TargetDeviceObject,Vcb);
+        UDFPrint(("After GetDiskInfo LastPossibleLba %x\n", Vcb->LastPossibleLBA));
         if(!NT_SUCCESS(RC)) try_return(RC);
 
         //     ****  Read registry settings  ****
@@ -854,7 +856,12 @@ UDFStartEjectWaiter(
 //    NTSTATUS RC;
     PREVENT_MEDIA_REMOVAL_USER_IN Buff;
     UDFPrint(("UDFStartEjectWaiter:\n"));
-
+    UDFPrint(("Vcb->FsDeviceType=%x\n", Vcb->FsDeviceType));
+    if (Vcb->FsDeviceType == FILE_DEVICE_DISK_FILE_SYSTEM)
+    {
+        UDFPrint(("Is HDD so skip\n"));
+        return STATUS_SUCCESS;
+    }
     if(Vcb->VCBFlags & UDF_VCB_FLAGS_MEDIA_READ_ONLY) {
         UDFPrint(("  UDF_VCB_FLAGS_MEDIA_READ_ONLY\n"));
     }
@@ -957,6 +964,7 @@ insuf_res_1:
     UDFPrint(("UDFCompleteMount: open Root Dir\n"));
     // Open Root Directory
     RC = UDFOpenRootFile__( Vcb, &(Vcb->RootLbAddr), RootFcb->FileInfo );
+    UDFPrint(("Done opening RootFile\n"));
     if(!NT_SUCCESS(RC)) {
 insuf_res_2:
         UDFCleanUpFile__(Vcb, RootFcb->FileInfo);
@@ -2073,14 +2081,13 @@ UDFGetVolumeBitmap(
 {
 //    NTSTATUS RC;
 
+    UDFPrint(("UDFGetVolumeBitmap\n"));
     PEXTENDED_IO_STACK_LOCATION IrpSp =
         (PEXTENDED_IO_STACK_LOCATION)IoGetCurrentIrpStackLocation( Irp );
 
     PVCB Vcb;
     PtrUDFFCB Fcb;
     PtrUDFCCB Ccb;
-
-    UDFPrint(("UDFGetVolumeBitmap\n"));
 
     ULONG BytesToCopy;
     ULONG TotalClusters;
@@ -2169,8 +2176,11 @@ UDFGetVolumeBitmap(
 //        Dest = (PULONG)(&OutputBuffer->Buffer[0]);
 
         for(i=StartingCluster & ~7; i<lim; i++) {
-            if(UDFGetFreeBit(FSBM, i<<LSh))
+            if (UDFGetFreeBit(FSBM, i << LSh))
+            {
+                UDFPrint(("fscntrl.cpp:2179:FSBM Set Free\n"));
                 UDFSetFreeBit(FSBM, i);
+            }
         }
 
     } _SEH2_EXCEPT(UDFExceptionFilter(IrpContext, _SEH2_GetExceptionInformation())) {

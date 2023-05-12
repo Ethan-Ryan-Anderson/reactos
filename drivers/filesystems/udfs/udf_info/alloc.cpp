@@ -43,11 +43,7 @@ static const int8 bit_count_tab[] = {
     This routine converts physical address to logical in specified partition
  */
 uint32
-UDFPhysLbaToPart(
-    IN PVCB Vcb,
-    IN uint32 PartNum,
-    IN uint32 Addr
-    )
+UDFPhysLbaToPart(IN PVCB Vcb, IN uint32 RefPartNum, IN uint32 Addr)
 {
     PUDFPartMap pm = Vcb->Partitions;
 #if defined (_X86_) && defined (_MSC_VER) && !defined(__clang__)
@@ -87,7 +83,7 @@ EO_pl2p:
 #ifdef UDF_DBG
     {
         // validate return value
-        lb_addr locAddr;
+        UDFPrint(("")) lb_addr locAddr;
         locAddr.logicalBlockNum = retval;
         locAddr.partitionReferenceNum = (uint16)PartNum;
         UDFPartLbaToPhys(Vcb, &locAddr);
@@ -97,8 +93,9 @@ EO_pl2p:
 #else   // NO X86 optimization , use generic C/C++
     uint32 i;
     // walk through partition maps to find suitable one...
-    for(i=PartNum; i<Vcb->PartitionMaps; i++, pm++) {
-        if(pm->PartitionNum == PartNum)
+    for (i = RefPartNum; i < Vcb->PartitionMaps; i++, pm++)
+    {
+        if (pm->PartitionNum == UDFGetPartNumByPartRef(Vcb, RefPartNum))
             // wow! return relative address
             return (Addr - pm->PartitionRoot) >> Vcb->LB2B_Bits;
     }
@@ -107,7 +104,7 @@ EO_pl2p:
 } // end UDFPhysLbaToPart()
 
 /*
-    This routine returns physycal Lba for partition-relative addr
+    This routine returns physical Lba for partition-relative addr
  */
 uint32
 __fastcall
@@ -117,6 +114,8 @@ UDFPartLbaToPhys(
   )
 {
     uint32 i, a;
+    AdPrint(("Vcb->PartitionMaps = %x\n", Vcb->PartitionMaps));
+    AdPrint(("Addr->partitionReferenceNum = %x\n", Addr->partitionReferenceNum));
     if(Addr->partitionReferenceNum >= Vcb->PartitionMaps) {
         AdPrint(("UDFPartLbaToPhys: part %x, lbn %x (err)\n",
             Addr->partitionReferenceNum, Addr->logicalBlockNum));
@@ -135,7 +134,8 @@ UDFPartLbaToPhys(
         if(Vcb->Partitions[i].PartitionNum == Addr->partitionReferenceNum) {
             a = Vcb->Partitions[i].PartitionRoot +
                     (Addr->logicalBlockNum << Vcb->LB2B_Bits);
-            if(a > Vcb->LastPossibleLBA) {
+            if (a > Vcb->LastPossibleLBA && false)
+            {
                 AdPrint(("UDFPartLbaToPhys: root %x, lbn %x, lba %x (err1)\n",
                     Vcb->Partitions[i].PartitionRoot, Addr->logicalBlockNum, a));
                 BrutePoint();
@@ -146,9 +146,12 @@ UDFPartLbaToPhys(
     }
     a = Vcb->Partitions[i-1].PartitionRoot +
             (Addr->logicalBlockNum << Vcb->LB2B_Bits);
-    if(a > Vcb->LastPossibleLBA) {
-        AdPrint(("UDFPartLbaToPhys: i %x, root %x, lbn %x, lba %x (err2)\n",
-            i, Vcb->Partitions[i-1].PartitionRoot, Addr->logicalBlockNum, a));
+    AdPrint(("a = %x, addr->logicalBlockNum = %x\n", a, Addr->logicalBlockNum));
+    if (a > Vcb->LastPossibleLBA && false)
+    {
+        AdPrint(
+            ("UDFPartLbaToPhys: i %x, root %x, lbn %x, lba %x (err2) lastPossibleLBA=%x\n", i,
+             Vcb->Partitions[i - 1].PartitionRoot, Addr->logicalBlockNum, a, Vcb->LastPossibleLBA));
         BrutePoint();
         return LBA_OUT_OF_EXTENT;
     }
@@ -196,19 +199,18 @@ UDFPartLbaToPhysCompat(
 /*
     This routine looks for the partition containing given physical sector
  */
-uint32
-__fastcall
-UDFGetPartNumByPhysLba(
-    IN PVCB Vcb,
-    IN uint32 Lba
-    )
+uint32 __fastcall UDFGetRefPartNumByPhysLba(IN PVCB Vcb, IN uint32 Lba)
 {
     uint32 i=Vcb->PartitionMaps-1, root;
     PUDFPartMap pm = &(Vcb->Partitions[i]);
     // walk through the partition maps to find suitable one
-    for(;i!=0xffffffff;i--,pm--) {
-        if( ((root = pm->PartitionRoot) <= Lba) &&
-            ((root + pm->PartitionLen) > Lba) ) return (uint16)pm->PartitionNum;
+    UDFPrint(("UDFGetPartNumByPhysLba: lba %x i %x\n", Lba, i));
+    UDFPrint(("pm->Root %x, pm->Len %x, pm->PartNum %x\n", pm->PartitionRoot, pm->PartitionLen, pm->PartitionNum));
+    for (; i != 0xffffffff; i--, pm--)
+    {
+        if (((root = pm->PartitionRoot) <= Lba) && ((root + pm->PartitionLen) > Lba))
+            // Unsure if this is correct
+            return (pm->PartitionNum >= Vcb->PartitionMaps ? i : (uint16)pm->PartitionNum);
     }
     return LBA_OUT_OF_EXTENT; // Lba doesn't belong to any partition
 } // end UDFGetPartNumByPhysLba()
@@ -217,18 +219,18 @@ UDFGetPartNumByPhysLba(
     Very simple routine. It walks through the Partition Maps & returns
     the 1st Lba of the 1st suitable one
  */
-uint32
-__fastcall
-UDFPartStart(
-    PVCB Vcb,
-    uint32 PartNum
-    )
+uint32 __fastcall UDFPartStart(PVCB Vcb, uint32 RefPartNum)
 {
     uint32 i;
-    if(PartNum == (uint32)-1) return 0;
-    if(PartNum == (uint32)-2) return Vcb->Partitions[0].PartitionRoot;
-    for(i=PartNum; i<Vcb->PartitionMaps; i++) {
-        if(Vcb->Partitions[i].PartitionNum == PartNum) return Vcb->Partitions[i].PartitionRoot;
+    UDFPrint(("UDFPartStart: RefPartNum %x\n", RefPartNum));
+    if (RefPartNum == (uint32)-1)
+        return 0;
+    if (RefPartNum == (uint32)-2)
+        return Vcb->Partitions[0].PartitionRoot;
+    for (i = RefPartNum; i < Vcb->PartitionMaps; i++)
+    {
+        if (Vcb->Partitions[i].PartitionNum == UDFGetPartNumByPartRef(Vcb, RefPartNum))
+            return Vcb->Partitions[i].PartitionRoot;
     }
     return 0;
 } // end UDFPartStart(
@@ -237,18 +239,16 @@ UDFPartStart(
    This routine does almost the same as previous.
    The only difference is changing First Lba to Last one...
  */
-uint32
-__fastcall
-UDFPartEnd(
-    PVCB Vcb,
-    uint32 PartNum
-    )
+uint32 __fastcall UDFPartEnd(PVCB Vcb, uint32 RefPartNum)
 {
     uint32 i;
-    if(PartNum == (uint32)-1) return Vcb->LastLBA;
-    if(PartNum == (uint32)-2) PartNum = Vcb->PartitionMaps-1;
-    for(i=PartNum; i<Vcb->PartitionMaps; i++) {
-        if(Vcb->Partitions[i].PartitionNum == PartNum)
+    if (RefPartNum == (uint32)-1)
+        return Vcb->LastLBA;
+    if (RefPartNum == (uint32)-2)
+        RefPartNum = Vcb->PartitionMaps - 1;
+    for (i = RefPartNum; i < Vcb->PartitionMaps; i++)
+    {
+        if (Vcb->Partitions[i].PartitionNum == UDFGetPartNumByPartRef(Vcb, RefPartNum))
             return (Vcb->Partitions[i].PartitionRoot +
                     Vcb->Partitions[i].PartitionLen);
     }
@@ -260,55 +260,53 @@ UDFPartEnd(
     Very simple routine. It walks through the Partition Maps & returns
     the 1st Lba of the 1st suitable one
  */
-uint32
-__fastcall
-UDFPartLen(
-    PVCB Vcb,
-    uint32 PartNum
-    )
+uint32 __fastcall UDFPartLen(PVCB Vcb, uint32 RefPartNum)
 {
 
-    if(PartNum == (uint32)-2) return UDFPartEnd(Vcb, -2) - UDFPartStart(Vcb, -2);
-/*#ifdef _X86_
-    uint32 ret_val;
-    __asm {
-        mov  ebx,Vcb
-        mov  eax,PartNum
-        cmp  eax,-1
-        jne  short NOT_last_gpl
-        mov  eax,[ebx]Vcb.LastLBA
-        jmp  short EO_gpl
-NOT_last_gpl:
-        mov  esi,eax
-        xor  eax,eax
-        mov  ecx,[ebx]Vcb.PartitionMaps
-        jecxz EO_gpl
+    if (RefPartNum == (uint32)-2)
+        return UDFPartEnd(Vcb, -2) - UDFPartStart(Vcb, -2);
+    /*#ifdef _X86_
+        uint32 ret_val;
+        __asm {
+            mov  ebx,Vcb
+            mov  eax,PartNum
+            cmp  eax,-1
+            jne  short NOT_last_gpl
+            mov  eax,[ebx]Vcb.LastLBA
+            jmp  short EO_gpl
+    NOT_last_gpl:
+            mov  esi,eax
+            xor  eax,eax
+            mov  ecx,[ebx]Vcb.PartitionMaps
+            jecxz EO_gpl
 
-        mov  eax,esi
-        mov  edx,size UDFTrackMap
-        mul  edx
-        add  ebx,eax
-        mov  eax,esi
-gpl_loop:
-        cmp  [ebx]Vcb.PartitionMaps.PartitionNum,ax
-        je   short EO_gpl_1
-        add  ebx,size UDFTrackMap
-        inc  eax
-        cmp  eax,ecx
-        jb   short gpl_loop
-        sub  ebx,size UDFTrackMap
-EO_gpl_1:
-        mov  eax,[ebx]Vcb.PartitionMaps.PartitionLen
-        add  eax,[ebx]Vcb.PartitionMaps.PartitionRoot
-EO_gpl:
-        mov  ret_val,eax
-    }
-    return ret_val;
-#else   // NO X86 optimization , use generic C/C++*/
+            mov  eax,esi
+            mov  edx,size UDFTrackMap
+            mul  edx
+            add  ebx,eax
+            mov  eax,esi
+    gpl_loop:
+            cmp  [ebx]Vcb.PartitionMaps.PartitionNum,ax
+            je   short EO_gpl_1
+            add  ebx,size UDFTrackMap
+            inc  eax
+            cmp  eax,ecx
+            jb   short gpl_loop
+            sub  ebx,size UDFTrackMap
+    EO_gpl_1:
+            mov  eax,[ebx]Vcb.PartitionMaps.PartitionLen
+            add  eax,[ebx]Vcb.PartitionMaps.PartitionRoot
+    EO_gpl:
+            mov  ret_val,eax
+        }
+        return ret_val;
+    #else   // NO X86 optimization , use generic C/C++*/
     uint32 i;
-    if(PartNum == (uint32)-1) return Vcb->LastLBA;
-    for(i=PartNum; i<Vcb->PartitionMaps; i++) {
-        if(Vcb->Partitions[i].PartitionNum == PartNum)
+    if (RefPartNum == (uint32)-1)
+        return Vcb->LastLBA;
+    for (i = RefPartNum; i < Vcb->PartitionMaps; i++)
+    {
+        if (Vcb->Partitions[i].PartitionNum == UDFGetPartNumByPartRef(Vcb, RefPartNum))
             return Vcb->Partitions[i].PartitionLen;
     }
     return (Vcb->Partitions[i-1].PartitionRoot +
@@ -765,6 +763,7 @@ UDFMarkBadSpaceAsUsed(
     )
 {
     uint32 j;
+    UDFPrint(("UDFMarkBadSpaceAsUsed lba %x len %x\n", lba, len));
 #define BIT_C   (sizeof(Vcb->BSBM_Bitmap[0])*8)
     len = (lba+len+BIT_C-1)/BIT_C;
     if(Vcb->BSBM_Bitmap) {
@@ -794,6 +793,7 @@ UDFMarkSpaceAsXXXNoProtect_(
     uint32 lba, j, len, BS, BSh;
     uint32 root;
     BOOLEAN asUsed = (asXXX == AS_USED || (asXXX & AS_BAD));
+    UDFPrint(("UDFMarkSpaceAsXXXNoProtect Loc %x Length %x asXXX=%x\n", Map->extLocation, Map->extLength, asXXX));
 #ifdef UDF_TRACK_ONDISK_ALLOCATION
     BOOLEAN bit_before, bit_after;
 #endif //UDF_TRACK_ONDISK_ALLOCATION
@@ -836,14 +836,16 @@ UDFMarkSpaceAsXXXNoProtect_(
 #endif // UDF_DBG
         len = ((Map[i].extLength & UDF_EXTENT_LENGTH_MASK)+BS-1) >> BSh;
         lba = Map[i].extLocation;
+        UDFPrint(("lba %x len %x\n", lba, len));
         if((lba+len) > Vcb->LastPossibleLBA) {
             // skip blocks beyond media boundary
             if(lba > Vcb->LastPossibleLBA) {
-                ASSERT(FALSE);
-                i++;
-                continue;
+                // ASSERT(FALSE);
+                UDFPrint(("Too big because Vcb->LastPossibleLBA=%x\n", Vcb->LastPossibleLBA));
+                // i++;
+                // continue;
             }
-            len = Vcb->LastPossibleLBA - lba;
+            // len = Vcb->LastPossibleLBA - lba;
         }
 
 #ifdef UDF_TRACK_ONDISK_ALLOCATION
@@ -858,6 +860,7 @@ UDFMarkSpaceAsXXXNoProtect_(
                 UDFSetUsedBit(Vcb->FSBM_Bitmap, lba+j);
             }*/
             ASSERT(len);
+            UDFPrint(("Setting Used Bits\n"));
             UDFSetUsedBits(Vcb->FSBM_Bitmap, lba, len);
 #ifdef UDF_TRACK_ONDISK_ALLOCATION
             for(j=0;j<len;j++) {
@@ -868,7 +871,8 @@ UDFMarkSpaceAsXXXNoProtect_(
             if(Vcb->Vat) {
                 // mark logical blocks in VAT as used
                 for(j=0;j<len;j++) {
-                    root = UDFPartStart(Vcb, UDFGetPartNumByPhysLba(Vcb, lba));
+                    root = UDFPartStart(Vcb, UDFGetRefPartNumByPhysLba(Vcb, lba));
+                    UDFPrint(("root %x\n"));
                     if((Vcb->Vat[lba-root+j] == UDF_VAT_FREE_ENTRY) &&
                        (lba > Vcb->LastLBA)) {
                          Vcb->Vat[lba-root+j] = 0x7fffffff;
@@ -880,6 +884,7 @@ UDFMarkSpaceAsXXXNoProtect_(
                 UDFSetFreeBit(Vcb->FSBM_Bitmap, lba+j);
             }*/
             ASSERT(len);
+            UDFPrint(("Setting Freed Bits\n"));
             UDFSetFreeBits(Vcb->FSBM_Bitmap, lba, len);
 #ifdef UDF_TRACK_ONDISK_ALLOCATION
             for(j=0;j<len;j++) {
@@ -887,20 +892,23 @@ UDFMarkSpaceAsXXXNoProtect_(
             }
 #endif //UDF_TRACK_ONDISK_ALLOCATION
             if(asXXX & AS_BAD) {
+                UDFPrint(("Bad bits. . .\n"));
                 UDFSetBits(Vcb->BSBM_Bitmap, lba, len);
             }
+            UDFPrint(("Bad Space to used. . .\n"));
             UDFMarkBadSpaceAsUsed(Vcb, lba, len);
 
             if(asXXX & AS_DISCARDED) {
                 UDFUnmapRange(Vcb, lba, len);
                 WCacheDiscardBlocks__(&(Vcb->FastCache), Vcb, lba, len);
+                UDFPrint(("Zero bits. . .\n"));
                 UDFSetZeroBits(Vcb->ZSBM_Bitmap, lba, len);
             }
             if(Vcb->Vat) {
                 // mark logical blocks in VAT as free
                 // this operation can decrease resulting VAT size
                 for(j=0;j<len;j++) {
-                    root = UDFPartStart(Vcb, UDFGetPartNumByPhysLba(Vcb, lba));
+                    root = UDFPartStart(Vcb, UDFGetRefPartNumByPhysLba(Vcb, lba));
                     Vcb->Vat[lba-root+j] = UDF_VAT_FREE_ENTRY;
                 }
             }
@@ -936,6 +944,7 @@ UDFMarkSpaceAsXXX_(
 #endif //UDF_TRACK_ONDISK_ALLOCATION
     )
 {
+    UDFPrint(("UDFMarkSpaceAsXXX_\n"));
     if(!Map) return;
     if(!Map[0].extLength) {
 #ifdef UDF_DBG
@@ -976,7 +985,7 @@ UDFAllocFreeExtent_(
     EXTENT_AD Ext;
     PEXTENT_MAP Map = NULL;
     uint32 len, LBS, BSh, blen;
-
+    UDFPrint(("UDFAllocFreeExtent_\n"));
     LBS = Vcb->LBlockSize;
     BSh = Vcb->BlockSizeBits;
     blen = (uint32)(((Length+LBS-1) & ~((int64)LBS-1)) >> BSh);
@@ -1040,6 +1049,7 @@ no_free_space_err:
         Ext.extLength |= EXTENT_NOT_RECORDED_ALLOCATED << 30;
         if(!(ExtInfo->Mapping)) {
             // create new
+            UDFPrint(("Create new\n"));
 #ifdef UDF_TRACK_ALLOC_FREE_EXTENT
             ExtInfo->Mapping = UDFExtentToMapping_(&Ext, src, line);
 #else // UDF_TRACK_ALLOC_FREE_EXTENT
@@ -1053,6 +1063,7 @@ no_free_space_err:
             }
             UDFMarkSpaceAsXXXNoProtect(Vcb, 0, ExtInfo->Mapping, AS_USED); // used
         } else {
+            UDFPrint(("Update existing\n"));
             // update existing
             Map = UDFExtentToMapping(&Ext);
             if(!Map) {

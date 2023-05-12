@@ -412,6 +412,7 @@ try_exit: NOTHING;
                 }
                 // we can't record ACL on old format disks
                 if(!UDFNtAclSupported(Vcb)) {
+                    UDFPrint(("EFE\n"));
                     Vcb->WriteSecurity = FALSE;
                     Vcb->UseExtendedFE = FALSE;
                 }

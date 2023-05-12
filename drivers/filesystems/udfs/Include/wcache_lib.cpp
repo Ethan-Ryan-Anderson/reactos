@@ -3005,6 +3005,7 @@ WCacheDirect__(
     }
     // check if requested block is already cached
     if( !(addr = (PCHAR)WCacheSectorAddr(block_array, i)) ) {
+        UDFPrint(("Requested block is not cached\n"));
         // block is not cached
         // allocate memory and read block from media
         // do not set block_array[i].Sector here, because if media access fails and recursive access to cache
@@ -3051,10 +3052,12 @@ WCacheDirect__(
         if(block_type & WCACHE_BLOCK_BAD) {
         //if(WCacheGetBadFlag(block_array,i)) {
             // bad packet. no pre-read
+            UDFPrint(("STATUS_DEVICE_DATA_ERROR\n"));
             status = STATUS_DEVICE_DATA_ERROR;
             goto EO_WCache_D;
         }
 #ifndef UDF_CHECK_UTIL
+        UDFPrint(("block_type of %x is %x\n", Lba, block_type));
         ASSERT(block_type & WCACHE_BLOCK_USED);
 #else
         if(!(block_type & WCACHE_BLOCK_USED)) {

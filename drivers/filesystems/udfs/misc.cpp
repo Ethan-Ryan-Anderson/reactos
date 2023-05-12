@@ -1789,9 +1789,7 @@ UDFReadRegKeys(
     Vcb->DefaultRegName = UDFMediaClassName[(ULONG)UDFGetMediaClass(Vcb)].ClassName;
 
     // Should we use Extended FE by default ?
-    Vcb->UseExtendedFE = (UCHAR)UDFGetParameter(Vcb, REG_USEEXTENDEDFE_NAME,
-        Update ? Vcb->UseExtendedFE : FALSE);
-    if(Vcb->UseExtendedFE != TRUE) Vcb->UseExtendedFE = FALSE;
+    Vcb->UseExtendedFE = (UCHAR)UDFGetParameter(Vcb, REG_USEEXTENDEDFE_NAME, Update ? Vcb->UseExtendedFE : FALSE);
     // What type of AllocDescs should we use
     Vcb->DefaultAllocMode = (USHORT)UDFGetParameter(Vcb, REG_DEFALLOCMODE_NAME,
         Update ? Vcb->DefaultAllocMode : ICB_FLAG_AD_SHORT);
